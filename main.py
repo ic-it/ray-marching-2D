@@ -1,114 +1,90 @@
+from functools import cache
+import math
 import pygame
-from map_lib import Map
+from map_lib import Circle, Line, Map, Polygon
 from math import sqrt, atan, tan, sin, cos, fabs, pi, acos, asin
 
 #Const
-SPEED = 10
+SPEED = 50
 WIN_X = 1200
 WIN_Y = 1000
 CENTER = (WIN_X//2, WIN_Y//2)
 
-
-
-def line_distance(line_, pos_now):
-    if line_.get('end')[0] >= line_.get('start')[0] and line_.get('end')[1] >= line_.get('start')[1]: 
-        x1_, y1_ = line_.get('end')     # Координаты начала
-        x2_, y2_ = line_.get('start')   # Координаты конца
-    else:
-        x1_, y1_ = line_.get('start')   # Координаты начала
-        x2_, y2_ = line_.get('end')     # Координаты конца
-    Mx_, My_ = pos_now                  # Координаты курсора
     
-    l1_ = sqrt((x1_ - Mx_)**2 + (y1_ - My_)**2)
-    l2_ = sqrt((x2_ - Mx_)**2 + (y2_ - My_)**2)
-    l3_ = sqrt((x2_ - x1_)**2 + (y2_ - y1_)**2)
-    AC_ = max(l1_, l2_)
-    A_ = y2_ - y1_
-    B_ = x1_- x2_
-    C_ = y1_*(x2_ - x1_) - x1_*(y2_ - y1_)
-    if sqrt(A_**2 + B_**2) == 0:
-        d_ = abs(A_*Mx_ + B_*My_ + C_) / 0.000001
-    else:
-        d_ = abs(A_*Mx_ + B_*My_ + C_) / sqrt(A_**2 + B_**2)
-    AD_ = sqrt(AC_**2 - d_**2)
-    if AD_ > l3_:
-        return min(l1_, l2_)
-    else:
-        return d_
 
-def min_distance(obj_ts: list, pos_now: list):
-    distances = []
-    for ob_ct in obj_ts:
-        if ob_ct.get('type') == 'circle':
-            distances.append(sqrt( 
-                                    (pos_now[0] - ob_ct.get('center')[0])**2 + (pos_now[1] - ob_ct.get('center')[1])**2
-                                    ) - ob_ct.get('radius')
-                            )
-        if ob_ct.get('type') == 'line':
-            distances.append(line_distance(ob_ct, pos_now))
-        elif ob_ct.get('type') == 'hide_box' or ob_ct.get('type') == 'figure':
-            for line_ in ob_ct.get('connects'):
-                points_ = { 'start': ob_ct.get('points')[line_[0]], 
-                            'end': ob_ct.get('points')[line_[1]]}
-                distances.append(line_distance(points_ ,pos_now))
-    return round(min(distances))
+def min_distance(obj_ts: list, player_pos: list):
+    return round(min(ob_ct.get_distance(player_pos) for ob_ct in obj_ts))
+
 
 pygame.init()
+my_font = pygame.font.SysFont('Comic Sans MS', 20)
+
 win = pygame.display.set_mode((WIN_X, WIN_Y))   # отображение окна
+clock = pygame.time.Clock()
 pygame.display.set_caption("ray marching")      # заголовок окна
 
-run = True
-#######
-map_     = Map(WIN_X, WIN_Y)
-map_.add().circle((300, 200), 50)
-map_.add().line((300, 400), (300, 350))
-map_.add().line((700, 350), (300, 350))
-map_.add().line((400, 700), (700, 350))
-map_.add().line((400, 700), (300, 400))
-map_.add().hide_box(
-    [(0, 0), (WIN_X, 0), (WIN_X, WIN_Y), (0, WIN_Y)], 
-    [(0, 1), (1, 2), (2, 3), (3, 0)])
-map_.add().figure(
-    [(200, 100), (100, 300), (100, 100), (200, 300)],
-    [(0, 1), (1, 2), (2, 3), (3, 0)])
 
-figures_ = map_.figures
-points_to_draw = []
-pos_now = list(CENTER[:]) # Позиция начала луча
+
+map_     = Map(WIN_X, WIN_Y)
+map_.figures.append(Circle((300, 200), 50))
+map_.figures.append(Polygon([(0, 0), (WIN_X, 0), (WIN_X, WIN_Y), (0, WIN_Y), (0, 1), (1, 2), (2, 3), (3, 0)], hidden=True))
+map_.figures.append(Polygon([(200, 100), (100, 300), (100, 100), (200, 300)]))
+
+
+map_.figures.append(Polygon([(500, 500), (400, 700), (200, 500), (400, 600)], color=(255, 0, 0)))
+
+figures_ = map_._figures
+player_pos = list(CENTER)
+
+
+run = True
 while run:
-    pos_now_d = pos_now[:] # Позиция начала луча, которая будет уменьшатся со временем
     win.fill((0, 0, 0))
 
-    #Get mouse pos
-    cursor = list(pygame.mouse.get_pos())
+    cursor = pygame.mouse.get_pos()
 
-    # Получить угол наклона между курсором и позицией в данный момент
-    if (pos_now[0] - cursor[0]) == 0:
-        alfa = atan((pos_now[1] - cursor[1]) / 0.0000001)
-    else:
-        alfa = atan((pos_now[1] - cursor[1]) / (pos_now[0] - cursor[0]))
-    if cursor[0] <= pos_now[0]:
-        alfa = pi+alfa
+    c_distance = ((cursor[0]-player_pos[0])**2 + (cursor[1]-player_pos[1])**2)**0.5
+    c_direction = ((cursor[0]-player_pos[0])/c_distance, (cursor[1]-player_pos[1])/c_distance)
 
     ## DRAW FIGURES
     for figure in figures_:
-        if figure.get('type') == 'circle':
-            pygame.draw.circle(win, figure['color'], figure['center'], figure['radius'], 1)
-        elif figure.get('type') == 'line':
-            pygame.draw.line(win, figure['color'], figure['start'], figure['end'], 1)
-        elif figure.get('type') == 'figure':
-            pygame.draw.polygon(win, figure['color'], figure.get('points'))
+        figure.draw(win)
 
-    ## Get Ray 
+
+
+    for direction in ((cos(r/10), sin(r/10)) for r in range(0, 63, SPEED//3)):
+        light_pos = player_pos[:]
+        for i in range(10):
+            min_radius = min_distance(figures_, light_pos)
+            pygame.draw.circle(win, (50, 0, 50), light_pos, min_radius, 1)
+            if min_radius < 5:
+                pygame.draw.circle(win, (0, 255, 0), light_pos, 3)
+                break
+            
+            p1 = light_pos[:]
+            light_pos[0] += direction[0]*min_radius
+            light_pos[1] += direction[1]*min_radius
+            pygame.draw.line(win, (50, 50, 50), p1, light_pos, 2)
+            pygame.draw.circle(win, (0, 50, 0), light_pos, 3)
+        
+    light_pos = player_pos[:]
+
     for i in range(50):
-        pygame.draw.circle(win, (0, 225, 225), pos_now_d, 4)
-        min_radius = min_distance(figures_, pos_now_d)
-        if min_radius > 5:
-            pygame.draw.circle(win, (225, 225, 0), pos_now_d, min_radius, 1)
-        else:
+        min_radius = min_distance(figures_, light_pos)
+        pygame.draw.circle(win, (255, 0, 255), light_pos, min_radius, 1)
+        if min_radius < 5:
+            pygame.draw.circle(win, (0, 255, 0), light_pos, 3)
             break
-        pos_now_d[0] = round(pos_now_d[0] + cos(alfa)*min_radius)
-        pos_now_d[1] = round(pos_now_d[1] + sin(alfa)*min_radius)
+        p1 = light_pos[:]
+        light_pos[0] += c_direction[0]*min_radius
+        light_pos[1] += c_direction[1]*min_radius
+        pygame.draw.line(win, (255, 255, 255), p1, light_pos, 1)
+        pygame.draw.circle(win, (0, 255, 0), light_pos, 2)
+    
+    pygame.draw.circle(win, (225, 225, 0), player_pos, 10)       
+
+
+    win.blit(my_font.render(f'{clock.get_fps()}', False, (255, 255, 255)), (10, 10))
 
     pygame.display.update()
     pygame.time.delay(int(SPEED))
@@ -118,16 +94,17 @@ while run:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 run = False
+    
     key = pygame.key.get_pressed()
+
     if key[pygame.K_DOWN] or key[pygame.K_s]:
-        pos_now[1] += 1
-        points_to_draw = []
+        player_pos[1] += 1
     if key[pygame.K_UP] or key[pygame.K_w]:
-        pos_now[1] -= 1
-        points_to_draw = []
+        player_pos[1] -= 1
     if key[pygame.K_LEFT] or key[pygame.K_a]:
-        pos_now[0] -= 1
-        points_to_draw = []
+        player_pos[0] -= 1
     if key[pygame.K_RIGHT] or key[pygame.K_d]:
-        pos_now[0] += 1
-        points_to_draw = []
+        player_pos[0] += 1
+    
+    elapsed = clock.tick(60)
+    SPEED = elapsed//100 or 10
